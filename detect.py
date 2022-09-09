@@ -6,6 +6,7 @@ import cv2
 import torch
 import torch.backends.cudnn as cudnn
 from numpy import random
+import numpy as np
 
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
@@ -14,13 +15,13 @@ from utils.general import check_img_size, check_requirements, check_imshow, non_
 from utils.plots import plot_one_box
 from utils.torch_utils import select_device, load_classifier, time_synchronized, TracedModel
 
-
+# print(f'Device is GPU{torch.cuda.is_available()}')
 def detect(save_img=False):
     source, weights, view_img, save_txt, imgsz, trace = opt.source, opt.weights, opt.view_img, opt.save_txt, opt.img_size, not opt.no_trace
     save_img = not opt.nosave and not source.endswith('.txt')  # save inference images
     webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
         ('rtsp://', 'rtmp://', 'http://', 'https://'))
-
+    
     # Directories
     save_dir = Path(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))  # increment run
     (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
@@ -31,10 +32,14 @@ def detect(save_img=False):
     half = device.type != 'cpu'  # half precision only supported on CUDA
 
     # Load model
+    print('loading model')
+    print(weights)
     model = attempt_load(weights, map_location=device)  # load FP32 model
     stride = int(model.stride.max())  # model stride
+    # print(imgsz)
     imgsz = check_img_size(imgsz, s=stride)  # check img_size
-
+    # print(f'Modified imgsz is {imgsz}')
+    print('done')
     if trace:
         model = TracedModel(model, device, opt.img_size)
 
@@ -67,7 +72,15 @@ def detect(save_img=False):
     old_img_b = 1
 
     t0 = time.time()
+
+    start_time = 0
     for path, img, im0s, vid_cap in dataset:
+        # print(f'this is path {path}===========================')
+        print(f'The shape of img is {np.shape(img)}')
+        # print(f'this is img {img}=======================')
+        print(f'The shape of im0s is {np.shape(im0s)}')
+        # print(f'this is im0s {im0s}=============================')
+        # print(f'this is vid_cap {vid_cap}==========================')
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
@@ -88,8 +101,10 @@ def detect(save_img=False):
         t2 = time_synchronized()
 
         # Apply NMS
+        print(f'classes is {opt.classes}')
         pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
         t3 = time_synchronized()
+
 
         # Apply Classifier
         if classify:
@@ -99,10 +114,12 @@ def detect(save_img=False):
         for i, det in enumerate(pred):  # detections per image
             if webcam:  # batch_size >= 1
                 p, s, im0, frame = path[i], '%g: ' % i, im0s[i].copy(), dataset.count
+                
             else:
                 p, s, im0, frame = path, '', im0s, getattr(dataset, 'frame', 0)
 
             p = Path(p)  # to Path
+            # print(f'this is p {p}')
             save_path = str(save_dir / p.name)  # img.jpg
             txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # img.txt
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
@@ -125,8 +142,9 @@ def detect(save_img=False):
 
                     if save_img or view_img:  # Add bbox to image
                         label = f'{names[int(cls)]} {conf:.2f}'
+                        # print(label)
                         plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=1)
-
+            
             # Print time (inference + NMS)
             print(f'{s}Done. ({(1E3 * (t2 - t1)):.1f}ms) Inference, ({(1E3 * (t3 - t2)):.1f}ms) NMS')
 
@@ -134,6 +152,12 @@ def detect(save_img=False):
             if view_img:
                 cv2.imshow(str(p), im0)
                 cv2.waitKey(1)  # 1 millisecond
+                current_time = time.time()
+                fps = 1/(current_time-start_time)
+                # print(fps)
+                start_time = current_time
+                cv2.putText(im0, f'FPS: {int(fps)}', (0,0), cv2.FONT_HERSHEY_PLAIN, 2, (0,255,0), 2, cv2.LINE_AA)
+
 
             # Save results (image with detections)
             if save_img:
@@ -160,7 +184,8 @@ def detect(save_img=False):
         #print(f"Results saved to {save_dir}{s}")
 
     print(f'Done. ({time.time() - t0:.3f}s)')
-
+    # if webcam:
+ 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
